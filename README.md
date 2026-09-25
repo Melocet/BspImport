@@ -6,6 +6,10 @@ Drop a `.bsp` file into the plugin folder, stand in an empty world, run `/bsp im
 map is built around you: walls, floors, stairs, ladders, water, doors, glass, fences, props and
 lights.
 
+| CS 1.6 (GoldSrc) | Source |
+| --- | --- |
+| [![BspImport building a CS 1.6 map](https://img.youtube.com/vi/IT6ONVaogBU/hqdefault.jpg)](https://www.youtube.com/watch?v=IT6ONVaogBU) | [![BspImport building a Source map](https://img.youtube.com/vi/91sLvlXdp-M/hqdefault.jpg)](https://www.youtube.com/watch?v=91sLvlXdp-M) |
+
 ## Supported maps
 
 - **GoldSrc** (BSP v30): Counter-Strike 1.6, Half-Life, Day of Defeat and other GoldSrc mods.
