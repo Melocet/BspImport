@@ -20,6 +20,10 @@ solid-threshold: 0.25
 shell: 2
 # Block placed where the map has sky brushes, so nobody climbs out over the walls.
 sky-block: BARRIER
+# Open maps (a field under a huge sky, like gm_flatgrass) are mostly sky. Only this many blocks of air
+# are kept above the highest thing in the map; the sky above is cut off and roofed with sky-block.
+# 0 keeps the whole sky.
+sky-headroom: 24
 # Solid blocks no texture reaches (inside thick walls).
 fill-block: STONE
 # How many blocks to place per server tick.

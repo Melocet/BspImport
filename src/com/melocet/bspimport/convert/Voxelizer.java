@@ -17,8 +17,21 @@ import java.util.stream.IntStream;
  */
 public final class Voxelizer {
 
+    /**
+     * skyHeadroom: blocks of open air kept above the highest thing in the map. Open maps (a flat
+     * field under a huge sky box) are mostly sky; above this the sky is cut off and roofed with the
+     * sky block. 0 keeps the whole sky.
+     */
     public record Options(double scale, int samples, double threshold, int shell, int terrainFill,
-                          Set<String> solidEntities, Set<String> waterEntities, Set<String> ladderEntities) {}
+                          Set<String> solidEntities, Set<String> waterEntities, Set<String> ladderEntities, int skyHeadroom) {
+        public Options(double scale, int samples, double threshold, int shell, int terrainFill,
+                       Set<String> solidEntities, Set<String> waterEntities, Set<String> ladderEntities) {
+            this(scale, samples, threshold, shell, terrainFill, solidEntities, waterEntities, ladderEntities, 24);
+        }
+    }
+
+    /** Grids bigger than this many blocks don't fit in a server's memory. */
+    private static final long MAX_CELLS = 150_000_000L;
 
     private record BrushEntity(int model, double ox, double oy, double oz, byte kind,
                                double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {
@@ -34,6 +47,8 @@ public final class Voxelizer {
     private final MapData map;
     private final Options o;
     private final double minX, minY, minZ, maxX, maxY, maxZ;
+    /** Whether the top was cut off below the map's sky, so it needs a roof. */
+    private final boolean capped;
     private final List<BrushEntity> brushes = new ArrayList<>();
 
     public Voxelizer(MapData map, Options options) {
@@ -44,10 +59,78 @@ public final class Voxelizer {
         double[] b = map.bounds();
         this.minX = Math.floor(b[0] / s) * s;
         this.minY = Math.floor(b[1] / s) * s;
-        this.minZ = Math.floor(b[2] / s) * s;
+        // A 3D skybox (a small copy of the scenery the sky shows) can sit inside the playable box,
+        // high above or below the map; the height range of what's built around the spawns skips it.
+        double[] range = options.skyHeadroom() > 0 ? contentRange(map, b) : null;
+        double bottom = Math.floor(b[2] / s) * s;
+        this.minZ = range != null && range[2] > 0 ? Math.max(bottom, Math.floor((range[0] - 4 * s) / s) * s) : bottom;
         this.maxX = Math.ceil(b[3] / s) * s;
         this.maxY = Math.ceil(b[4] / s) * s;
-        this.maxZ = Math.ceil(b[5] / s) * s;
+        double top = Math.ceil(b[5] / s) * s;
+        double cut = range == null ? top : Math.ceil((range[1] + options.skyHeadroom() * s) / s) * s;
+        this.capped = cut < top;
+        this.maxZ = capped ? cut : top;
+    }
+
+    /**
+     * The height range of what's built around the spawns: brush faces that aren't sky or tool
+     * textures, terrain and the spawns themselves, inside the map's area, merged into bands wherever
+     * they overlap or nearly touch. The bands holding a spawn count; a band holding only the sky
+     * camera (the 3D skybox) doesn't. Returns {bottom, top, 1 if a skybox band was left out}, or null.
+     */
+    private static double[] contentRange(MapData map, double[] b) {
+        List<double[]> spans = new ArrayList<>();
+        String[] names = map.textureNames();
+        for (int f = map.firstFace(0); f < map.firstFace(0) + map.numFaces(0); f++) {
+            int t = map.faceTexture(f);
+            if (t < 0 || map.isSky(t) || names[t].startsWith("tools/")) continue;
+            double[] v = map.faceVertices(f);
+            double lo = Double.MAX_VALUE, hi = -Double.MAX_VALUE;
+            boolean in = false;
+            for (int i = 0; i < v.length; i += 3) {
+                lo = Math.min(lo, v[i + 2]);
+                hi = Math.max(hi, v[i + 2]);
+                in |= v[i] >= b[0] && v[i] <= b[3] && v[i + 1] >= b[1] && v[i + 1] <= b[4];
+            }
+            if (in) spans.add(new double[]{lo, hi});
+        }
+        for (MapData.Triangle t : map.extraSurfaces()) {
+            double lo = Math.min(t.a()[2], Math.min(t.b()[2], t.c()[2])), hi = Math.max(t.a()[2], Math.max(t.b()[2], t.c()[2]));
+            spans.add(new double[]{lo, hi});
+        }
+        List<Double> spawns = new ArrayList<>();
+        Double camera = null;
+        for (Map<String, String> e : map.entities()) {
+            String cls = e.getOrDefault("classname", "");
+            double z = vector(e.get("origin"))[2];
+            if (cls.equals("sky_camera")) camera = z;
+            if (!map.humanSpawnClasses().contains(cls) && !map.zombieSpawnClasses().contains(cls)) continue;
+            spawns.add(z);
+            spans.add(new double[]{z, z + 72});
+        }
+        if (spans.isEmpty()) return null;
+        spans.sort((x, y) -> Double.compare(x[0], y[0]));
+        List<double[]> bands = new ArrayList<>();
+        for (double[] sp : spans) {
+            double[] last = bands.isEmpty() ? null : bands.get(bands.size() - 1);
+            if (last != null && sp[0] <= last[1] + 512) last[1] = Math.max(last[1], sp[1]);
+            else bands.add(sp.clone());
+        }
+        double lo = Double.MAX_VALUE, hi = -Double.MAX_VALUE;
+        boolean skipped = false;
+        for (double[] band : bands) {
+            boolean spawn = spawns.isEmpty();
+            for (double z : spawns) spawn |= z >= band[0] - 1 && z <= band[1] + 1;
+            boolean sky = camera != null && camera >= band[0] - 1 && camera <= band[1] + 1;
+            if (sky && !spawn) {
+                skipped = true;
+                continue;
+            }
+            lo = Math.min(lo, band[0]);
+            hi = Math.max(hi, band[1]);
+        }
+        if (lo > hi) return null;
+        return new double[]{lo, hi, skipped ? 1 : 0};
     }
 
     /** Grid size in blocks before trimming: x, y (height), z. */
@@ -101,6 +184,11 @@ public final class Voxelizer {
     public VoxelGrid run(IntConsumer progress, Extras extras) {
         collectBrushEntities(extras.keep());
         int[] n = size();
+        if ((long) n[0] * n[1] * n[2] > MAX_CELLS) {
+            int suggest = (int) Math.ceil(o.scale() * Math.cbrt((double) n[0] * n[1] * n[2] / MAX_CELLS) / 8) * 8;
+            throw new IllegalStateException("the map is " + n[0] + " x " + n[2] + " blocks and " + n[1]
+                    + " tall at this scale, too big to build. Try a scale of " + suggest + " or more.");
+        }
         VoxelGrid g = new VoxelGrid(n[0], n[1], n[2]);
         g.mapX = minX;
         g.mapY = maxY;
@@ -113,6 +201,7 @@ public final class Voxelizer {
         });
         int[] votes = new int[g.kind.length];
         terrain(g, votes);
+        if (capped) roof(g);
         progress.accept(75);
         // Open space as the map has it. Trimming below turns far-away solid into air too, and that
         // air must not count as a place anyone can stand and look from.
@@ -135,6 +224,17 @@ public final class Voxelizer {
         VoxelGrid trimmed = trim(g);
         progress.accept(100);
         return trimmed;
+    }
+
+    /** The sky was cut off above the map: open blocks in the top layer become sky, so nobody climbs out. */
+    private static void roof(VoxelGrid g) {
+        int y = g.ny - 1;
+        for (int z = 0; z < g.nz; z++) {
+            for (int x = 0; x < g.nx; x++) {
+                int i = g.index(x, y, z);
+                if (g.kind[i] == VoxelGrid.AIR) g.kind[i] = VoxelGrid.SKY;
+            }
+        }
     }
 
     // ---------------------------------------------------------------- props and doors

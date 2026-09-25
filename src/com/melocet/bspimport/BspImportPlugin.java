@@ -615,7 +615,8 @@ public final class BspImportPlugin extends JavaPlugin implements org.bukkit.even
                 Math.max(0, Math.min(8, c.getInt("terrain-fill", 3))),
                 lower(c.getStringList(prefix + "solid-entities")),
                 lower(c.getStringList(prefix + "water-entities")),
-                lower(c.getStringList(prefix + "ladder-entities")));
+                lower(c.getStringList(prefix + "ladder-entities")),
+                Math.max(0, c.getInt("sky-headroom", 24)));
     }
 
     private static Set<String> lower(List<String> list) {
