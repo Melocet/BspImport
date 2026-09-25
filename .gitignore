@@ -1,0 +1,6 @@
+out/
+lib/
+*.jar
+build.log
+testdata/
+logs/

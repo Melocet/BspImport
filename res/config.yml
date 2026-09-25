@@ -1,0 +1,111 @@
+# BspImport: builds CS 1.6 (GoldSrc) and Source 1 maps out of blocks.
+#
+# Put .bsp files in plugins/BspImport/maps/. For CS 1.6 maps, the game's .wad files (cstrike.wad,
+# halflife.wad, ...) go in plugins/BspImport/wads/: most maps keep their texture pixels there. For
+# Source maps, the game's VPKs or models/ and materials/ go in plugins/BspImport/content/.
+# Then stand in an empty world and run /bsp import <map>. The map is built centered on you.
+
+# CS units per block. 32 makes a player 2.25 blocks tall and a standard 64-unit door 2 wide.
+# 24 builds the map a third bigger with thinner walls and more detail; /bsp import <map> 24 tries it once.
+scale: 32
+# Slabs, stairs, fences, walls, panes and bars where a block is only partly filled. false = whole blocks only.
+shapes: true
+# Points tested per block along each axis (4 = 64 per block). Even numbers also tell which half of a
+# block is filled, which is what picks slabs and stairs. More is slower but catches thinner walls.
+samples: 4
+# A block becomes solid when at least this share of its points is inside a wall.
+solid-threshold: 0.25
+# Walls are built this many blocks thick behind every open space. Everything outside a CS map is
+# solid rock; this keeps only the walls you can see instead of a giant filled box.
+shell: 2
+# Block placed where the map has sky brushes, so nobody climbs out over the walls.
+sky-block: BARRIER
+# Solid blocks no texture reaches (inside thick walls).
+fill-block: STONE
+# How many blocks to place per server tick.
+blocks-per-tick: 20000
+
+# Brush entities that stand in the map as solid blocks. Doors are left out so paths stay open.
+solid-entities: [func_wall, func_breakable, func_wall_toggle, func_pushable]
+water-entities: [func_water]
+ladder-entities: [func_ladder]
+
+# Texture name rules, checked in order before color matching (regular expressions, lowercase names).
+# AIR skips the surface. Anything else is a block name.
+texture-rules:
+  - "^sky$: AIR"
+  - "^(aaatrigger|clip|null|origin|hint|skip|bevel)$: AIR"
+  - "^!: WATER"
+  - "^\\{: IRON_BARS"
+
+# Source displacements (terrain) are surfaces; this many blocks of ground are built under them.
+terrain-fill: 3
+
+# Source 1 maps (CS:S, CS:GO, HL2, GMod). Colors come from the map itself, no game files needed.
+source-solid-entities: [func_brush, func_wall, func_wall_toggle, func_breakable, func_breakable_surf, func_physbox]
+source-water-entities: [func_water_analog]
+source-ladder-entities: [func_ladder, func_simpleladder, func_useableladder]
+# Checked before texture-rules for Source maps. Names look like "de_dust/sandwall01".
+source-texture-rules:
+  - "^tools/toolsskybox: BARRIER"
+  - "^tools/tools(invisible|clip|playerclip|npcclip|blockbullets|invisibleladder): BARRIER"
+  - "^tools/toolsblack: BLACK_CONCRETE"
+  - "^tools/: AIR"
+  - "glass: GLASS"
+  - "(chainlink|fence|grate|wire): IRON_BARS"
+
+# Doors (func_door, func_door_rotating, prop_door_rotating) become Minecraft doors. Openings wider
+# than door-max-width blocks (garage doors, gates) are left open. Doors whose texture or model name
+# matches metal-door-names get metal-door; the rest wood-door. Both have to be doors people can open
+# by hand (iron doors need redstone).
+doors: true
+door-max-width: 2
+wood-door: OAK_DOOR
+metal-door: WAXED_WEATHERED_COPPER_DOOR
+metal-door-names: "metal|steel|iron|jail|cell|bars|gate|security"
+
+# Source props (furniture, cars, lamps...) are built from the game's own models and materials. Put
+# the game's *_dir.vpk files (with their _000.vpk, _001.vpk... parts), or loose models/ and materials/
+# folders, in plugins/BspImport/content/. One folder per game inside it works too. Or leave the game
+# where it is and list its folders here instead, for example:
+#   - "D:/SteamLibrary/steamapps/common/Contagion/vpks"
+#   - "C:/Program Files (x86)/Steam/steamapps/common/Counter-Strike Source/cstrike"
+game-folders: []
+props: true
+# Props smaller than this many units across (cups, papers, cans) are skipped.
+prop-min-size: 12
+# Props on nothing solid in the game (hanging lights, plants) are built too when true.
+nonsolid-props: true
+# Model paths matching any of these are skipped.
+prop-skip:
+  - "props_skybox/"
+  - "/gibs?/"
+  - "foliage|grass|fern|ivy"
+  - "decal"
+
+# Maps change while they're played: random barricades, blocked doorways, walls that open. Anything the
+# map's logic enables, disables, toggles, kills or breaks is left out, so passages stay open.
+skip-switched: true
+# Brush entities and props whose name matches this are left out too.
+skip-names: "barricade|blocker"
+
+# Light blocks (invisible) where the map has lights, so rooms are lit like in the game and dark corners
+# stay dark. Faces whose texture name matches light-textures (ceiling panels, GoldSrc "~" textures) get
+# a light in front of them at texture-light-level.
+lights: true
+light-textures: "^~|^[+][0-9a-j]?~|(^|/)lights?/|fluor|lightpanel|light_?[0-9]"
+texture-light-level: 12
+
+# Walls show their texture's pattern: each block looks at the part of the texture it covers, and spots
+# that stand out from the texture's average (grout, stripes, trim, signs) get their own block. Higher
+# pattern-contrast keeps more walls plain.
+patterns: true
+pattern-contrast: 30
+
+# Small props (chairs, tables, bottles, signs) are shown as a few scaled block displays instead of whole
+# blocks. They look right but nobody bumps into them. display-max-size is in blocks; display-parts is
+# the most boxes one prop gets; display-limit caps them for the whole map.
+display-props: true
+display-max-size: 2.0
+display-parts: 6
+display-limit: 8000

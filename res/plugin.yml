@@ -1,0 +1,17 @@
+name: BspImport
+version: '0.9.0'
+main: com.melocet.bspimport.BspImportPlugin
+api-version: '1.21'
+authors: [Melocet]
+description: Builds CS 1.6 (GoldSrc) and Source 1 (CS:S, CS:GO, HL2) maps out of Minecraft blocks.
+
+commands:
+  bsp:
+    description: Import a CS 1.6 map
+    usage: /bsp help
+    permission: bspimport.use
+
+permissions:
+  bspimport.use:
+    default: op
+    description: Use /bsp
